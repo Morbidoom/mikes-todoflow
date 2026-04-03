@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mike's TodoFlow</title>
+    <link rel="icon" type="image/svg+xml" href="mike.svg" />
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+    />
+  </head>
+  <body>
+    <div class="app-wrapper">
+      <header class="app-header">
+        <div class="header-content">
+          <div class="header-top">
+            <div class="logo">
+              <img src="mike.svg" alt="Mike" class="logo-icon" />
+              <span>Mike's TodoFlow</span>
+            </div>
+            <div class="date-display" id="dateDisplay"></div>
+          </div>
+          <div class="progress-section">
+            <div class="progress-info">
+              <span id="progressLabel">0 de 0 tarefas concluídas</span>
+              <span id="progressPercent">0%</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="progressFill"></div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="app-main">
+        <div class="input-section">
+          <div class="input-row">
+            <div class="input-wrapper">
+              <i class="fa-solid fa-plus input-icon"></i>
+              <input
+                type="text"
+                id="taskInput"
+                placeholder="Adicionar nova tarefa..."
+                maxlength="120"
+                autocomplete="off"
+              />
+              <select id="categorySelect">
+                <option value="personal">Pessoal</option>
+                <option value="work">Trabalho</option>
+                <option value="study">Estudo</option>
+                <option value="health">Saúde</option>
+                <option value="other">Outro</option>
+              </select>
+            </div>
+            <button id="addBtn" class="add-btn">
+              <i class="fa-solid fa-arrow-right"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="filter-section">
+          <div class="filter-tabs">
+            <button class="filter-tab active" data-filter="all">
+              Todas <span class="tab-count" id="countAll">0</span>
+            </button>
+            <button class="filter-tab" data-filter="active">
+              Ativas <span class="tab-count" id="countActive">0</span>
+            </button>
+            <button class="filter-tab" data-filter="completed">
+              Concluídas <span class="tab-count" id="countCompleted">0</span>
+            </button>
+          </div>
+          <button class="clear-btn" id="clearCompleted" title="Remover concluídas">
+            <i class="fa-solid fa-trash-can"></i>
+            <span>Limpar concluídas</span>
+          </button>
+        </div>
+
+        <div class="category-filter">
+          <button class="cat-chip active" data-cat="all">Todas</button>
+          <button class="cat-chip" data-cat="personal">
+            <i class="fa-solid fa-user"></i> Pessoal
+          </button>
+          <button class="cat-chip" data-cat="work">
+            <i class="fa-solid fa-briefcase"></i> Trabalho
+          </button>
+          <button class="cat-chip" data-cat="study">
+            <i class="fa-solid fa-book"></i> Estudo
+          </button>
+          <button class="cat-chip" data-cat="health">
+            <i class="fa-solid fa-heart"></i> Saúde
+          </button>
+          <button class="cat-chip" data-cat="other">
+            <i class="fa-solid fa-tag"></i> Outro
+          </button>
+        </div>
+
+        <ul class="task-list" id="taskList">
+          <!-- Tasks rendered here -->
+        </ul>
+
+        <div class="empty-state" id="emptyState">
+          <div class="empty-icon">
+            <i class="fa-regular fa-clipboard"></i>
+          </div>
+          <p class="empty-title">Nenhuma tarefa encontrada</p>
+          <p class="empty-sub">Adicione uma nova tarefa para começar!</p>
+        </div>
+      </main>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
