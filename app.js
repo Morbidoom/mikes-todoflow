@@ -128,9 +128,13 @@ logoutBtn.addEventListener('click', async () => {
 });
 
 // ===== Firestore: Real-time listener =====
+let subscribeRetries = 0;
+const MAX_RETRIES = 3;
+
 async function subscribeToTasks(uid) {
+  await new Promise(r => setTimeout(r, 500));
+
   try {
-    // Força refresh do token antes de abrir o listener
     await currentUser.getIdToken(true);
   } catch (e) {
     console.warn('Token refresh falhou:', e);
@@ -140,14 +144,19 @@ async function subscribeToTasks(uid) {
   unsubscribeTasks = onSnapshot(
     q,
     snapshot => {
+      subscribeRetries = 0;
       tasks = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       renderTasks();
     },
     error => {
       console.error('Firestore error:', error.code, error.message);
-      if (error.code === 'permission-denied') {
-        showToast('Sessão expirada. Fazendo login novamente...');
-        setTimeout(() => signOut(auth), 1500);
+      if (error.code === 'permission-denied' && subscribeRetries < MAX_RETRIES) {
+        subscribeRetries++;
+        console.log(`Retentativa ${subscribeRetries}/${MAX_RETRIES}...`);
+        if (unsubscribeTasks) { unsubscribeTasks(); unsubscribeTasks = null; }
+        setTimeout(() => subscribeToTasks(uid), 1500 * subscribeRetries);
+      } else if (error.code === 'permission-denied') {
+        showToast('Sem permissão. Verifique as regras do Firestore.');
       } else {
         showToast('Erro ao carregar tarefas. Recarregue a página.');
       }
