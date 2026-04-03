@@ -1,75 +1,163 @@
+// ===== Firebase Imports =====
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+} from 'https://www.gstatic.com/firebasejs/10.11.0/firebase-auth.js';
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  doc,
+  updateDoc,
+  deleteDoc,
+  onSnapshot,
+  query,
+  orderBy,
+} from 'https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore.js';
+
+// ===== Firebase Init =====
+const firebaseConfig = {
+  apiKey: "AIzaSyCNhGiWX8J4mfa9iTocwEJFRgQJouwFvAE",
+  authDomain: "mikes-todoflow-57050.firebaseapp.com",
+  projectId: "mikes-todoflow-57050",
+  storageBucket: "mikes-todoflow-57050.firebasestorage.app",
+  messagingSenderId: "1026658998039",
+  appId: "1:1026658998039:web:fc9c7bea8802b0b1e0c952",
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const auth        = getAuth(firebaseApp);
+const db          = getFirestore(firebaseApp);
+const provider    = new GoogleAuthProvider();
+
 // ===== State =====
-let tasks = JSON.parse(localStorage.getItem('todoflow_tasks') || '[]');
-let currentFilter = 'all';
+let tasks           = [];
+let currentFilter   = 'all';
 let currentCategory = 'all';
+let currentUser     = null;
+let unsubscribeTasks = null;
 
 // ===== Category config =====
 const categories = {
-  personal: { label: 'Pessoal', icon: 'fa-user' },
-  work:     { label: 'Trabalho', icon: 'fa-briefcase' },
-  study:    { label: 'Estudo', icon: 'fa-book' },
-  health:   { label: 'Saúde', icon: 'fa-heart' },
-  other:    { label: 'Outro', icon: 'fa-tag' },
+  personal: { label: 'Pessoal',  icon: 'fa-user'      },
+  work:     { label: 'Trabalho', icon: 'fa-briefcase'  },
+  study:    { label: 'Estudo',   icon: 'fa-book'       },
+  health:   { label: 'Saúde',   icon: 'fa-heart'      },
+  other:    { label: 'Outro',    icon: 'fa-tag'        },
 };
 
-// ===== DOM refs =====
-const taskInput     = document.getElementById('taskInput');
+// ===== DOM Refs =====
+const taskInput      = document.getElementById('taskInput');
 const categorySelect = document.getElementById('categorySelect');
-const addBtn        = document.getElementById('addBtn');
-const taskList      = document.getElementById('taskList');
-const emptyState    = document.getElementById('emptyState');
-const progressFill  = document.getElementById('progressFill');
-const progressLabel = document.getElementById('progressLabel');
-const progressPercent = document.getElementById('progressPercent');
-const countAll      = document.getElementById('countAll');
-const countActive   = document.getElementById('countActive');
+const addBtn         = document.getElementById('addBtn');
+const taskList       = document.getElementById('taskList');
+const emptyState     = document.getElementById('emptyState');
+const progressFill   = document.getElementById('progressFill');
+const progressLabel  = document.getElementById('progressLabel');
+const progressPercent= document.getElementById('progressPercent');
+const countAll       = document.getElementById('countAll');
+const countActive    = document.getElementById('countActive');
 const countCompleted = document.getElementById('countCompleted');
-const clearBtn      = document.getElementById('clearCompleted');
-const toastEl       = document.getElementById('toast');
-const dateDisplay   = document.getElementById('dateDisplay');
+const clearBtn       = document.getElementById('clearCompleted');
+const toastEl        = document.getElementById('toast');
+const dateDisplay    = document.getElementById('dateDisplay');
+const loginScreen    = document.getElementById('loginScreen');
+const appWrapper     = document.getElementById('appWrapper');
+const loginBtn       = document.getElementById('loginBtn');
+const logoutBtn      = document.getElementById('logoutBtn');
+const userAvatar     = document.getElementById('userAvatar');
+const userNameEl     = document.getElementById('userName');
 
-// ===== Init =====
-function init() {
+// ===== Firestore Helpers =====
+function tasksRef(uid) {
+  return collection(db, 'users', uid, 'tasks');
+}
+
+function taskDocRef(uid, id) {
+  return doc(db, 'users', uid, 'tasks', id);
+}
+
+// ===== Auth State =====
+onAuthStateChanged(auth, user => {
+  if (user) {
+    currentUser = user;
+    showApp(user);
+    subscribeToTasks(user.uid);
+  } else {
+    currentUser = null;
+    if (unsubscribeTasks) { unsubscribeTasks(); unsubscribeTasks = null; }
+    tasks = [];
+    showLogin();
+  }
+});
+
+function showApp(user) {
+  loginScreen.classList.remove('visible');
+  appWrapper.classList.add('visible');
+  userAvatar.src = user.photoURL || '';
+  userAvatar.alt = user.displayName || '';
+  userNameEl.textContent = (user.displayName || '').split(' ')[0];
   renderDate();
   renderTasks();
   setupEventListeners();
 }
 
-function renderDate() {
-  const now = new Date();
-  const days = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
-  const months = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
-  dateDisplay.innerHTML = `${days[now.getDay()]}<br>${now.getDate()} de ${months[now.getMonth()]}`;
+function showLogin() {
+  loginScreen.classList.add('visible');
+  appWrapper.classList.remove('visible');
 }
 
-// ===== Save =====
-function save() {
-  localStorage.setItem('todoflow_tasks', JSON.stringify(tasks));
+// ===== Google Login / Logout =====
+loginBtn.addEventListener('click', async () => {
+  try {
+    loginBtn.disabled = true;
+    await signInWithPopup(auth, provider);
+  } catch (e) {
+    showToast('Erro ao fazer login. Tente novamente.');
+    loginBtn.disabled = false;
+  }
+});
+
+logoutBtn.addEventListener('click', async () => {
+  await signOut(auth);
+  showToast('Até logo!');
+});
+
+// ===== Firestore: Real-time listener =====
+function subscribeToTasks(uid) {
+  const q = query(tasksRef(uid), orderBy('createdAt', 'desc'));
+  unsubscribeTasks = onSnapshot(q, snapshot => {
+    tasks = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderTasks();
+  });
 }
 
 // ===== Add Task =====
-function addTask() {
+async function addTask() {
   const text = taskInput.value.trim();
-  if (!text) {
-    shakeInput();
-    return;
+  if (!text) { shakeInput(); return; }
+  if (!currentUser) return;
+
+  addBtn.disabled = true;
+  try {
+    await addDoc(tasksRef(currentUser.uid), {
+      text,
+      category: categorySelect.value,
+      completed: false,
+      createdAt: new Date().toISOString(),
+    });
+    showToast('Tarefa adicionada!');
+    taskInput.value = '';
+    taskInput.focus();
+  } catch (e) {
+    showToast('Erro ao adicionar tarefa.');
+  } finally {
+    addBtn.disabled = false;
   }
-
-  const task = {
-    id: Date.now(),
-    text,
-    category: categorySelect.value,
-    completed: false,
-    createdAt: new Date().toISOString(),
-  };
-
-  tasks.unshift(task);
-  save();
-  renderTasks();
-  showToast('Tarefa adicionada!');
-
-  taskInput.value = '';
-  taskInput.focus();
 }
 
 function shakeInput() {
@@ -80,25 +168,23 @@ function shakeInput() {
 }
 
 // ===== Toggle Complete =====
-function toggleTask(id) {
+async function toggleTask(id) {
+  if (!currentUser) return;
   const task = tasks.find(t => t.id === id);
   if (!task) return;
-  task.completed = !task.completed;
-  save();
-  renderTasks();
-  showToast(task.completed ? 'Tarefa concluída!' : 'Tarefa reaberta!');
+  await updateDoc(taskDocRef(currentUser.uid, id), { completed: !task.completed });
+  showToast(task.completed ? 'Tarefa reaberta!' : 'Tarefa concluída!');
 }
 
 // ===== Delete Task =====
 function deleteTask(id) {
+  if (!currentUser) return;
   const el = document.querySelector(`[data-id="${id}"]`);
   if (el) {
     el.classList.add('removing');
-    el.addEventListener('animationend', () => {
-      tasks = tasks.filter(t => t.id !== id);
-      save();
-      renderTasks();
-    });
+    el.addEventListener('animationend', async () => {
+      await deleteDoc(taskDocRef(currentUser.uid, id));
+    }, { once: true });
   }
   showToast('Tarefa removida.');
 }
@@ -106,13 +192,13 @@ function deleteTask(id) {
 // ===== Edit Task =====
 function startEdit(id) {
   const task = tasks.find(t => t.id === id);
-  if (!task) return;
+  if (!task || !currentUser) return;
 
-  const item = document.querySelector(`[data-id="${id}"]`);
+  const item   = document.querySelector(`[data-id="${id}"]`);
   const textEl = item.querySelector('.task-text');
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.value = task.text;
+  const input  = document.createElement('input');
+  input.type      = 'text';
+  input.value     = task.text;
   input.className = 'task-edit-input';
   input.maxLength = 120;
 
@@ -120,31 +206,30 @@ function startEdit(id) {
   input.focus();
   input.select();
 
-  function saveEdit() {
+  async function saveEdit() {
     const newText = input.value.trim();
     if (newText && newText !== task.text) {
-      task.text = newText;
-      save();
+      await updateDoc(taskDocRef(currentUser.uid, id), { text: newText });
       showToast('Tarefa atualizada!');
+    } else {
+      renderTasks();
     }
-    renderTasks();
   }
 
   input.addEventListener('blur', saveEdit);
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') input.blur();
+    if (e.key === 'Enter')  input.blur();
     if (e.key === 'Escape') { input.value = task.text; input.blur(); }
   });
 }
 
 // ===== Clear Completed =====
-function clearCompleted() {
-  const count = tasks.filter(t => t.completed).length;
-  if (count === 0) { showToast('Nenhuma tarefa concluída.'); return; }
-  tasks = tasks.filter(t => !t.completed);
-  save();
-  renderTasks();
-  showToast(`${count} tarefa(s) removida(s).`);
+async function clearCompleted() {
+  if (!currentUser) return;
+  const completed = tasks.filter(t => t.completed);
+  if (completed.length === 0) { showToast('Nenhuma tarefa concluída.'); return; }
+  await Promise.all(completed.map(t => deleteDoc(taskDocRef(currentUser.uid, t.id))));
+  showToast(`${completed.length} tarefa(s) removida(s).`);
 }
 
 // ===== Filter & Render =====
@@ -152,8 +237,8 @@ function getFilteredTasks() {
   return tasks.filter(task => {
     const matchStatus =
       currentFilter === 'all' ||
-      (currentFilter === 'active' && !task.completed) ||
-      (currentFilter === 'completed' && task.completed);
+      (currentFilter === 'active'    && !task.completed) ||
+      (currentFilter === 'completed' &&  task.completed);
     const matchCat =
       currentCategory === 'all' || task.category === currentCategory;
     return matchStatus && matchCat;
@@ -162,40 +247,34 @@ function getFilteredTasks() {
 
 function renderTasks() {
   const filtered = getFilteredTasks();
-  const total = tasks.length;
-  const done  = tasks.filter(t => t.completed).length;
-  const active = total - done;
+  const total    = tasks.length;
+  const done     = tasks.filter(t => t.completed).length;
+  const active   = total - done;
+  const pct      = total === 0 ? 0 : Math.round((done / total) * 100);
 
-  // Progress
-  const pct = total === 0 ? 0 : Math.round((done / total) * 100);
-  progressFill.style.width = `${pct}%`;
-  progressLabel.textContent = `${done} de ${total} tarefa${total !== 1 ? 's' : ''} concluída${total !== 1 ? 's' : ''}`;
+  progressFill.style.width    = `${pct}%`;
+  progressLabel.textContent   = `${done} de ${total} tarefa${total !== 1 ? 's' : ''} concluída${total !== 1 ? 's' : ''}`;
   progressPercent.textContent = `${pct}%`;
-
-  // Counts
-  countAll.textContent = total;
-  countActive.textContent = active;
+  countAll.textContent       = total;
+  countActive.textContent    = active;
   countCompleted.textContent = done;
 
-  // Render list
   taskList.innerHTML = '';
 
   if (filtered.length === 0) {
     emptyState.classList.add('visible');
   } else {
     emptyState.classList.remove('visible');
-    filtered.forEach(task => {
-      taskList.appendChild(createTaskEl(task));
-    });
+    filtered.forEach(task => taskList.appendChild(createTaskEl(task)));
   }
 }
 
 function createTaskEl(task) {
-  const li = document.createElement('li');
-  li.className = `task-item cat-${task.category}${task.completed ? ' completed' : ''}`;
+  const li  = document.createElement('li');
+  li.className  = `task-item cat-${task.category}${task.completed ? ' completed' : ''}`;
   li.dataset.id = task.id;
 
-  const cat = categories[task.category] || categories.other;
+  const cat     = categories[task.category] || categories.other;
   const dateStr = formatDate(task.createdAt);
 
   li.innerHTML = `
@@ -208,18 +287,14 @@ function createTaskEl(task) {
       </div>
     </div>
     <div class="task-actions">
-      <button class="task-action-btn edit" title="Editar tarefa">
-        <i class="fa-solid fa-pen"></i>
-      </button>
-      <button class="task-action-btn delete" title="Remover tarefa">
-        <i class="fa-solid fa-trash"></i>
-      </button>
+      <button class="task-action-btn edit"   title="Editar tarefa"><i class="fa-solid fa-pen"></i></button>
+      <button class="task-action-btn delete" title="Remover tarefa"><i class="fa-solid fa-trash"></i></button>
     </div>
   `;
 
   li.querySelector('.task-check').addEventListener('change', () => toggleTask(task.id));
-  li.querySelector('.edit').addEventListener('click', () => startEdit(task.id));
-  li.querySelector('.delete').addEventListener('click', () => deleteTask(task.id));
+  li.querySelector('.edit').addEventListener('click',        () => startEdit(task.id));
+  li.querySelector('.delete').addEventListener('click',      () => deleteTask(task.id));
 
   return li;
 }
@@ -234,8 +309,7 @@ function escapeHtml(str) {
 }
 
 function formatDate(iso) {
-  const d = new Date(iso);
-  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
 }
 
 let toastTimer;
@@ -246,17 +320,23 @@ function showToast(msg) {
   toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2400);
 }
 
+function renderDate() {
+  const now    = new Date();
+  const days   = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+  const months = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  dateDisplay.innerHTML = `${days[now.getDay()]}<br>${now.getDate()} de ${months[now.getMonth()]}`;
+}
+
 // ===== Event Listeners =====
+let listenersAttached = false;
 function setupEventListeners() {
+  if (listenersAttached) return;
+  listenersAttached = true;
+
   addBtn.addEventListener('click', addTask);
-
-  taskInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') addTask();
-  });
-
+  taskInput.addEventListener('keydown', e => { if (e.key === 'Enter') addTask(); });
   clearBtn.addEventListener('click', clearCompleted);
 
-  // Status filter tabs
   document.querySelectorAll('.filter-tab').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
@@ -266,7 +346,6 @@ function setupEventListeners() {
     });
   });
 
-  // Category filter chips
   document.querySelectorAll('.cat-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
@@ -277,7 +356,7 @@ function setupEventListeners() {
   });
 }
 
-// ===== Shake animation (inline) =====
+// ===== Shake animation =====
 const shakeStyle = document.createElement('style');
 shakeStyle.textContent = `
   @keyframes shake {
@@ -289,6 +368,3 @@ shakeStyle.textContent = `
   }
 `;
 document.head.appendChild(shakeStyle);
-
-// ===== Start =====
-init();
