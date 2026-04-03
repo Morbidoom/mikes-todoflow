@@ -85,6 +85,7 @@ function taskDocRef(uid, id) {
 onAuthStateChanged(auth, async user => {
   if (user) {
     currentUser = user;
+    console.log('Auth OK — uid:', user.uid, '| email:', user.email);
     showApp(user);
     await subscribeToTasks(user.uid);
   } else {
@@ -140,6 +141,7 @@ async function subscribeToTasks(uid) {
     console.warn('Token refresh falhou:', e);
   }
 
+  console.log('Firestore path:', `users/${uid}/tasks`);
   const q = query(tasksRef(uid), orderBy('createdAt', 'desc'));
   unsubscribeTasks = onSnapshot(
     q,
