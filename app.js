@@ -82,11 +82,11 @@ function taskDocRef(uid, id) {
 }
 
 // ===== Auth State =====
-onAuthStateChanged(auth, user => {
+onAuthStateChanged(auth, async user => {
   if (user) {
     currentUser = user;
     showApp(user);
-    subscribeToTasks(user.uid);
+    await subscribeToTasks(user.uid);
   } else {
     currentUser = null;
     if (unsubscribeTasks) { unsubscribeTasks(); unsubscribeTasks = null; }
@@ -128,12 +128,31 @@ logoutBtn.addEventListener('click', async () => {
 });
 
 // ===== Firestore: Real-time listener =====
-function subscribeToTasks(uid) {
+async function subscribeToTasks(uid) {
+  try {
+    // Força refresh do token antes de abrir o listener
+    await currentUser.getIdToken(true);
+  } catch (e) {
+    console.warn('Token refresh falhou:', e);
+  }
+
   const q = query(tasksRef(uid), orderBy('createdAt', 'desc'));
-  unsubscribeTasks = onSnapshot(q, snapshot => {
-    tasks = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-    renderTasks();
-  });
+  unsubscribeTasks = onSnapshot(
+    q,
+    snapshot => {
+      tasks = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderTasks();
+    },
+    error => {
+      console.error('Firestore error:', error.code, error.message);
+      if (error.code === 'permission-denied') {
+        showToast('Sessão expirada. Fazendo login novamente...');
+        setTimeout(() => signOut(auth), 1500);
+      } else {
+        showToast('Erro ao carregar tarefas. Recarregue a página.');
+      }
+    }
+  );
 }
 
 // ===== Add Task =====
